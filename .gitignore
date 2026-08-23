@@ -1,5 +1,23 @@
+# Required by the assignment (Q8 / Q7.1)
 *.zip
 *.pt
 *.ckpt
 __pycache__/
 data/
+
+# Additional -- large/derived artifacts that shouldn't live in git
+feature_store/
+*.npy
+*.npz
+*.index
+.venv/
+venv/
+.ipynb_checkpoints/
+.pytest_cache/
+*.egg-info/
+
+# results/ is intentionally NOT ignored -- it's small JSON files committed as
+# evidence (see SPEC.md repo layout). predictions/ IS ignored: at real Codabench
+# test-set scale these are hundreds of MB (well past GitHub's 100MB file limit)
+# and are fully regenerable via `python -m src.submission.{mind,ebnerd}`.
+predictions/

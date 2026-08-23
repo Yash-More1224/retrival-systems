@@ -1,0 +1,61 @@
+# Single source of truth for hyperparameters, paths, and seeds.
+# Every script reads this file (via src/config.py) instead of hardcoding constants,
+# so `make all` is reproducible and the design note's numbers trace back to one place.
+
+seed: 42
+
+paths:
+  raw_dir: data/raw
+  interim_dir: data/interim
+  splits_dir: data/splits
+  feature_store_dir: feature_store
+  results_dir: results
+  predictions_dir: predictions
+
+datasets: [mind, ebnerd]
+
+# EB-NeRD demo is used for iteration; ebnerd_small for final reported numbers.
+# Both are already downloaded — see data/raw/MANIFEST.json.
+ebnerd:
+  scale: demo # demo | small  (override with --ebnerd-scale on the CLI)
+
+# EB-NeRD's provided train/validation windows (confirmed from the parquet files).
+# val is carved out of the first ~4 days of the provided `validation/` split,
+# test out of the remaining ~3 days. Both share train's history file, whose window
+# ends 2023-05-25 07:00 -- strictly before both val and test -- so no re-derivation
+# of history is needed when splitting within this window.
+ebnerd_split_boundaries:
+  train_start: "2023-05-18T07:00:00"
+  train_end: "2023-05-25T07:00:00" # exclusive
+  val_start: "2023-05-25T07:00:00"
+  val_end: "2023-05-29T07:00:00" # exclusive
+  test_start: "2023-05-29T07:00:00"
+  test_end: "2023-06-01T07:00:00" # exclusive
+
+# MIND-small: train/dev are already time-disjoint. We carve val out of the
+# last day of MINDsmall_train and keep MINDsmall_dev entirely as test.
+mind_split:
+  val_days_from_train_tail: 1
+
+retrieval:
+  bm25:
+    k1: 1.5
+    b: 0.75
+    top_k: [50, 100, 200]
+    query_history_n: 5 # overridden by the N-sweep in retrieval/bm25.py
+  semantic:
+    top_k: [50, 100, 200]
+    user_history_n: 5 # overridden by the N-sweep in retrieval/run_semantic_eval.py
+    # Embeddings are PROVIDED, not computed (see src/retrieval/build_embeddings.py):
+    # EB-NeRD uses the shipped word2vec document vectors; MIND has no provided
+    # per-article embedding, so we mean-pool its provided entity_embedding.vec over
+    # each article's title+abstract entities. No sentence-transformers / no training.
+
+eval:
+  ndcg_ks: [5, 10]
+  beyond_accuracy_cutoff: 10
+  bootstrap:
+    n_boot: 1000
+    ci: 0.95
+  cold_start_threshold: 5 # history_len < 5 => cold-start
+  head_tail_top_pct: 0.10 # top-10% by train-split click count => head
