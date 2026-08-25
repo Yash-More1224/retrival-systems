@@ -16,6 +16,11 @@ venv/
 .pytest_cache/
 *.egg-info/
 
+# LaTeX build artifacts from compiling docs/design_note.tex -- only the .pdf is the deliverable
+docs/*.aux
+docs/*.log
+docs/*.out
+
 # results/ is intentionally NOT ignored -- it's small JSON files committed as
 # evidence (see SPEC.md repo layout). predictions/ IS ignored: at real Codabench
 # test-set scale these are hundreds of MB (well past GitHub's 100MB file limit)

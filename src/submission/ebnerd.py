@@ -58,6 +58,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import shutil
 from pathlib import Path
 
 import numpy as np
@@ -231,8 +232,14 @@ def generate(cfg: dict, method: str) -> None:
     print(f"ebnerd/{method}: validated and wrote {n_written} rows (n={n}, "
           f"{getattr(row_iter, 'n_uncovered', '?')} uncovered-candidate scores)")
 
+    # Codabench's guidelines require the file INSIDE the zip to be named
+    # exactly "predictions.txt" (plural) -- see SPEC.md Q5 -- even though our
+    # on-disk copy is named ebnerd_predictions.txt for clarity alongside mind's.
+    codabench_txt = predictions_dir / "predictions.txt"
+    shutil.copyfile(txt_path, codabench_txt)
     zip_path = predictions_dir / "ebnerd_predictions.zip"
-    zip_submission(txt_path, zip_path)
+    zip_submission(codabench_txt, zip_path)
+    codabench_txt.unlink()
     print(f"ebnerd/{method}: wrote {txt_path} and {zip_path}")
 
 

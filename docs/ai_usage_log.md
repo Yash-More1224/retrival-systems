@@ -497,3 +497,44 @@ since it wasn't explicitly requested.
 
 **Human review status**: image placement and page count verified by the user's own screenshot
 files and a re-rendered page image, not just a clean LaTeX compile.
+
+### 2026-08-25/26 -- EB-NeRD submission filename bug, final screenshots, requirements check
+
+User reported the EB-NeRD Codabench submission had failed with `FileNotFoundError:
+/app/input/res/predictions.txt`. Diagnosed by inspecting the actual zip contents
+(`unzip -l predictions/ebnerd_predictions.zip`): it contained `ebnerd_predictions.txt` at the
+root, not `predictions.txt`. Cross-checked against `SPEC.md`'s EB-NeRD submission-format
+section and `src/submission/mind.py`, which already handles the equivalent MIND requirement
+(Codabench needs the exact internal filename `prediction.txt`, singular) by copying to a
+temp file with the required name before zipping, then deleting it. `src/submission/ebnerd.py`
+was missing that step entirely -- it zipped `ebnerd_predictions.txt` directly. Fixed by adding
+the same copy-rename-zip-delete pattern (`shutil.copyfile` to a temp `predictions.txt`, zip
+that, `unlink()` after). Also repackaged the *existing* `ebnerd_predictions.zip` directly from
+the already-computed `ebnerd_predictions.txt` (703MB) rather than rerunning the multi-hour
+scoring pipeline, since only the archive's internal filename was wrong, not the predictions
+themselves.
+
+User then renamed `screenshots/MIND-leaderboard.png` to `screenshots/mind_screenshot.png` and
+replaced `screenshots/eb-nerd_screenshot.png` with an updated capture (now showing a completed
+score row, AUC 0.514 -- resolving the "still pending" state flagged in the 2026-08-24 entry
+above) and asked for `docs/design_note.tex` to be updated and recompiled. Updated the
+`\includegraphics` path for the renamed MIND file; the EB-NeRD path was already correct since
+the filename didn't change. Recompiled with `pdflatex` (two passes, to settle the hyperref
+bookmark outline); output unchanged at 3 of the 4-page budget.
+
+User separately asked whether the assignment requirements were complete. Checked the working
+tree against `Assignment1_v1.pdf` and this repo's own `SPEC.md` Q7-Q9 checklist: Q1-Q4 pipeline/
+retrieval/eval code and tests all present and passing (`pytest -q`: 59 passed, 3 skipped); Q5
+now has completed scores on both leaderboards (MIND AUC 0.5851, EB-NeRD AUC 0.514); Q6 design
+note compiles clean with both screenshots embedded; Q9 leakage test and serving-feature
+ablation table both present. Flagged three gaps to the user rather than silently fixing them:
+today's changes (the `ebnerd.py` fix, renamed/updated screenshots, recompiled design note) were
+sitting uncommitted; this AI usage log itself was stale (last entry 2026-08-24); and LaTeX
+build junk (`design_note.aux/.log/.out`) was untracked but not gitignored. User asked for all
+three to be closed out, which is what produced this entry, the `.gitignore` addition
+(`docs/*.aux`, `docs/*.log`, `docs/*.out`), and the commit that follows.
+
+**Human review status**: the `ebnerd.py` fix was verified by inspecting the repackaged zip's
+contents directly (`unzip -l`, confirming the single root-level `predictions.txt`) rather than
+just trusting the code change; actual Codabench rescoring outcome (whether the resubmitted zip
+is accepted) is the user's to confirm once submitted, not verifiable from this environment.
