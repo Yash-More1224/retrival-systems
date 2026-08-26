@@ -1,0 +1,85 @@
+{
+  "dataset": "mind",
+  "n_docs": 56774,
+  "dim": 100,
+  "n_queries": 500,
+  "k": 100,
+  "runs": {
+    "exact_flat": {
+      "latency_ms_total": 137.96786200009592,
+      "qps": 3624.0323851626576,
+      "recall_vs_exact": 1.0
+    },
+    "ivf_flat": {
+      "nlist": 238,
+      "by_nprobe": {
+        "1": {
+          "latency_ms_total": 5.392460000166466,
+          "qps": 92722.06005877929,
+          "recall_vs_exact": 0.5389200000000001
+        },
+        "2": {
+          "latency_ms_total": 11.67071700001543,
+          "qps": 42842.269245269075,
+          "recall_vs_exact": 0.69706
+        },
+        "4": {
+          "latency_ms_total": 7.148698000037257,
+          "qps": 69942.80636801194,
+          "recall_vs_exact": 0.82516
+        },
+        "8": {
+          "latency_ms_total": 10.75812599992787,
+          "qps": 46476.49599970779,
+          "recall_vs_exact": 0.91324
+        },
+        "16": {
+          "latency_ms_total": 17.228593999789155,
+          "qps": 29021.520851098994,
+          "recall_vs_exact": 0.96038
+        },
+        "32": {
+          "latency_ms_total": 32.673234000412776,
+          "qps": 15303.045911943802,
+          "recall_vs_exact": 0.9820800000000001
+        },
+        "238": {
+          "latency_ms_total": 181.16999999983818,
+          "qps": 2759.838825415061,
+          "recall_vs_exact": 0.9947800000000001
+        }
+      }
+    },
+    "hnsw": {
+      "M": 32,
+      "efConstruction": 40,
+      "by_efSearch": {
+        "16": {
+          "latency_ms_total": 15.90952800006562,
+          "qps": 31427.70797461356,
+          "recall_vs_exact": 0.7763199999999999
+        },
+        "32": {
+          "latency_ms_total": 10.609762000058254,
+          "qps": 47126.41056389905,
+          "recall_vs_exact": 0.8613
+        },
+        "64": {
+          "latency_ms_total": 15.654210000320745,
+          "qps": 31940.28954445835,
+          "recall_vs_exact": 0.9307799999999999
+        },
+        "128": {
+          "latency_ms_total": 18.824276000032114,
+          "qps": 26561.44650658262,
+          "recall_vs_exact": 0.9660599999999999
+        },
+        "256": {
+          "latency_ms_total": 25.832350999735354,
+          "qps": 19355.574721213812,
+          "recall_vs_exact": 0.9751400000000001
+        }
+      }
+    }
+  }
+}

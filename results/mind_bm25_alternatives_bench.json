@@ -1,0 +1,21 @@
+{
+  "dataset": "mind",
+  "n_docs": 65238,
+  "n_queries_sampled": 196,
+  "ours_csr_matmul": {
+    "build_seconds": 1.4382815879998816,
+    "score_seconds": 0.09336020499995357,
+    "queries_per_second": 2099.3955615253576
+  },
+  "rank_bm25": {
+    "build_seconds": 0.3243655309997848,
+    "score_seconds": 72.97307575700006,
+    "queries_per_second": 2.6859221427458935
+  },
+  "speedup_score_only": 781.6293436484673,
+  "full_test_split_n_impressions": 73152,
+  "projected_full_test_seconds": {
+    "ours_csr_matmul": 34.84431487835001,
+    "rank_bm25": 27235.338968245243
+  }
+}

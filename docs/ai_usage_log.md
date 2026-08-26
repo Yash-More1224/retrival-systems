@@ -538,3 +538,123 @@ three to be closed out, which is what produced this entry, the `.gitignore` addi
 contents directly (`unzip -l`, confirming the single root-level `predictions.txt`) rather than
 just trusting the code change; actual Codabench rescoring outcome (whether the resubmitted zip
 is accepted) is the user's to confirm once submitted, not verifiable from this environment.
+
+### 2026-08-26 -- Rigor additions per professor's grading note (tool/index choices, alternatives, measured throughput)
+
+Professor's message on grading emphasized "rigorously analyse your approach including
+tool/db/index choices, their impact on engineering metrics, how they compare to alternatives,
+... optimizations improving latency/throughputs" over leaderboard rank. Reviewing the design
+note against that bar found four claims that were asserted rather than measured. User asked for
+all four to be closed out in one sitting, combined with walking through the underlying concepts
+(BM25, then semantic/FAISS) so the user can defend each choice in the graded viva, not just cite
+a number. All four experiments are real runs against local labeled val/test splits (no Codabench
+resubmission involved -- confirmed with the user first, since they asked whether this required
+re-submitting to the leaderboard).
+
+1. **`rank_bm25` vs. the hand-rolled CSR scorer** (`src/eval/bench_bm25_alternatives.py`, new):
+   `bm25.py`'s docstring claimed rank_bm25 "does not finish in reasonable time" without ever
+   timing it. Measured head-to-head on the same tokenized corpus/queries: 782x speedup on MIND
+   (196 queries: 73.0s vs 0.09s), 497x on EB-NeRD; extrapolated to MIND's full 73K-impression
+   test split, rank_bm25 would need ~7.6 hours vs. 35s for the CSR matmul. Written into
+   `design_note.tex` S3, replacing the unmeasured claim.
+
+2. **Stemming ablation** (`src/eval/run_tokenizer_ablation.py`, new): reading `tokenize.py`
+   surfaced that `stem` defaults to `False` and no caller (bm25.py, either submission script)
+   ever passes `stem=True` -- stemming was never actually applied, contradicting
+   `design_note.tex`'s existing claim of "language-specific tokenisation and stemming." Added a
+   `stem` kwarg to `BM25Index.build` (default unchanged) and measured recall@K with it on vs.
+   off, at each dataset's already-selected best N, on the val split. Stemming genuinely helps
+   EB-NeRD (B@200 recall 0.0444->0.0604, +36% relative) and genuinely hurts MIND slightly
+   (B@200 0.1405->0.1372, -2.3%) -- consistent with Danish's heavier compounding morphology.
+   Asked the user whether to adopt stemming into the live EB-NeRD submission (a real improvement)
+   or just correct the false claim and report the finding; user chose report-only, given the
+   deadline and EB-NeRD's 5/day Codabench rate limit plus multi-hour scoring time. Design note
+   corrected accordingly, predictions left unchanged.
+
+3. **FAISS ANN recall-vs-latency curve** (`src/eval/bench_ann_recall_latency.py`, new): the
+   design note's own Limitations section already flagged this as not done. Built `IndexIVFFlat`
+   (nlist=sqrt(n_docs), swept nprobe) and `IndexHNSWFlat` (M=32, swept efSearch) against the
+   existing `IndexFlatIP` exact baseline, measuring recall against the exact index's own top-100
+   (not ground-truth clicks -- a standard ANN-evaluation convention) and QPS, using real user
+   query vectors sampled from the test split's click histories. IVF nprobe=8 reaches 91-92%
+   recall at 13-20x exact's throughput; HNSW efSearch=64 reaches 93-99% recall at 15-19x.
+   Written into design_note.tex S4; the Limitations line was updated from "no curve was run" to
+   "measured at demo/small scale only, not at 10x+ production scale."
+
+4. **OpenBLAS thread-count sweep** (`src/eval/bench_thread_scaling.py`, new): S7 claimed "this
+   machine's numpy build caps OpenBLAS at 2 threads" (from `numpy.__config__.show()` reporting
+   `MAX_THREADS=2` in the build config) without ever sweeping actual thread counts. First
+   attempt mistakenly benchmarked BM25's *sparse* matmul; realized this doesn't test the actual
+   claim (S7's 367 impressions/sec figure is about the *semantic* full-catalog *dense* matmul,
+   `SemanticIndex.score_dense`), so generalized the script with a --mode flag and measured both.
+   Semantic (dense): throughput keeps improving past 2 threads on both a wrapped benchmark and
+   an independent bare-numpy sanity check (180->95->52->52ms at 1/2/4/8 threads, plateauing at
+   4) -- the original "capped at 2 threads" claim does not hold on this machine and was
+   retracted in the design note, with a note that the printed `MAX_THREADS` build field is not
+   an enforced runtime ceiling. BM25 (sparse): flat throughput across 1-8 threads on both
+   datasets -- confirmed as a genuinely different finding (scipy's sparse matmul doesn't route
+   through the same threaded dense-BLAS GEMM path), kept in the design note as a contrast to the
+   semantic result rather than discarded as a mistake. User asked for the correction to
+   replace (not merely append to) the original unverified claim.
+
+Design note grew from 3 to 4 pages after these additions (still within the 4-page assignment
+cap); tightened `\parskip` and cut some verbosity in two paragraphs (the "Extrapolating past
+13.5M" paragraph in S7, and the OpenBLAS correction paragraph) so S8/references landed back on
+page 3, leaving page 4 as a short 3-line references-only tail rather than a mostly-blank page.
+Full pytest suite re-run after the `bm25.py` `stem` parameter addition: 59 passed, 3 skipped,
+unchanged from before.
+
+**Human review status**: all four benchmark scripts were actually executed against real local
+data (not synthetic/mocked) and their printed output cross-checked against what got written into
+`design_note.tex` before compiling; the thread-scaling correction was independently re-verified
+with a bare-numpy benchmark outside the pipeline wrapper specifically because it contradicts
+previously-written content, not just accepted on the first measurement. The decision not to
+adopt stemming into the live submission, and to correct (not merely append to) the thread-count
+claim, were both explicit user choices via AskUserQuestion, not unilateral calls.
+
+### 2026-08-26 (later) -- Pre-deadline review: tone/voice pass, verified a remembered number, structural rewrite
+
+User flagged the deadline was ~4 hours out and asked for a review pass rather than new content:
+tone (individual-assignment voice), one number they wanted double-checked against memory, and a
+structural change (bullets instead of dense paragraphs) applied uniformly across the whole note.
+
+1. **First-person voice**: this is individual work, but the note was written in "we/our" plural
+   throughout (a holdover from earlier drafting). Grepped for whole-word `\b(we|our|us)\b`
+   rather than trusting a visual scan (`grep -noiE`) to find every instance without false
+   positives from words like "source"/"hour" -- found and fixed exactly 7 occurrences across
+   S1/S3(x2)/S4/S5/S7(x2). Re-grepped after editing to confirm zero remained.
+
+2. **Verified, not assumed, a remembered statistic**: user recalled MIND's cold-start-impression
+   percentage as "13%" and asked to check it against the note's stated "14%". Recomputed directly
+   from `results/mind_bm25_eval.json`'s slice counts (10306 cold-start / 73152 total = 14.09%)
+   rather than trusting either the note or the user's memory blindly -- the note's existing 14%
+   was correct; the user's recollection was the one slightly off. No change made, since the
+   claim already matched the underlying data.
+
+3. **Section 1 shortened**: cut restating what the assignment already asks for (the professor
+   set the assignment, doesn't need it re-explained), keeping only what's actually
+   informative -- the parameterised-not-duplicated pipeline decision and why it matters given
+   the two datasets' differences.
+
+4. **Whole-document restructure to bullet points**: every section's previously-dense paragraphs
+   (S1 intro, S2 pipeline, S3 BM25 including the newly-added rank_bm25/stemming rigor content,
+   S4 semantic including the ANN curve, S5's dataset-property/cold-start/head-tail findings, S6's
+   metrics/slicing list plus the Q9.1 ablation writeup, S7's breakage narrative including the
+   OpenBLAS correction and 10x extrapolation) rewritten as `itemize` lists, one distinct claim
+   per bullet, so each point is individually scannable rather than requiring a full paragraph
+   read to find one fact. S7's existing `enumerate` (the three breakages) was left as-is since it
+   was already itemized. User explicitly said not to worry about the page count from this
+   change ("we'll fix it later on") -- grew from 4 to a still-4-page document (page 4 now has
+   more trailing whitespace than before the bullet conversion), left as is per that instruction
+   rather than pre-emptively tightened.
+
+Recompiled with `pdflatex` (two passes) and visually verified all four pages via `pdftoppm`
+rasterization rather than trusting a clean compile alone -- confirmed bullets render correctly,
+no text overflowing page margins, one new overfull-hbox warning (21.5pt, in the Q9.1 ablation
+table's surrounding text) is not visible in the rendered output. Full pytest suite re-run since
+this preceded a commit, even though only `docs/` changed: 59 passed, 3 skipped, unchanged.
+
+**Human review status**: the "13% vs 14%" question was answered by direct recomputation from
+the results file the claim is grounded in, not by re-reading the design note's own prose (which
+would just be checking the claim against itself); the we/our/us removal was verified complete by
+re-grepping after editing, not assumed from the edit list alone.

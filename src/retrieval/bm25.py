@@ -44,10 +44,13 @@ class BM25Index:
 
     @classmethod
     def build(cls, article_ids: list[str], texts: list[str], lang: str,
-              k1: float = 1.5, b: float = 0.75) -> "BM25Index":
+              k1: float = 1.5, b: float = 0.75, stem: bool = False) -> "BM25Index":
         # functools.partial over a module-level function (not a lambda closure) so the
         # vectorizer -- and therefore the whole index -- is picklable (see save()/load()).
-        tok = functools.partial(tokenize, lang=lang)
+        # stem defaults to False: the main pipeline has never actually enabled stemming
+        # (see docs/ai_usage_log.md's tokenizer-ablation entry) -- exposed here so the
+        # ablation can build a stemmed index for comparison without changing default behavior.
+        tok = functools.partial(tokenize, lang=lang, stem=stem)
         vectorizer = CountVectorizer(tokenizer=tok, preprocessor=_identity, token_pattern=None, lowercase=False)
         X = vectorizer.fit_transform(texts)  # (n_docs, n_terms) raw term counts, CSR
 

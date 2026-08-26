@@ -1,0 +1,21 @@
+{
+  "dataset": "ebnerd",
+  "n_docs": 11777,
+  "n_queries_sampled": 200,
+  "ours_csr_matmul": {
+    "build_seconds": 0.15773864499988122,
+    "score_seconds": 0.011243536000165477,
+    "queries_per_second": 17787.998366088435
+  },
+  "rank_bm25": {
+    "build_seconds": 0.04068442099969616,
+    "score_seconds": 5.589149299999917,
+    "queries_per_second": 35.78362095283498
+  },
+  "speedup_score_only": 497.0988930811142,
+  "full_test_split_n_impressions": 11798,
+  "projected_full_test_seconds": {
+    "ours_csr_matmul": 0.6632561886497614,
+    "rank_bm25": 329.70391720699513
+  }
+}
