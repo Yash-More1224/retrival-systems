@@ -658,3 +658,55 @@ this preceded a commit, even though only `docs/` changed: 59 passed, 3 skipped, 
 the results file the claim is grounded in, not by re-reading the design note's own prose (which
 would just be checking the claim against itself); the we/our/us removal was verified complete by
 re-grepping after editing, not assumed from the edit list alone.
+
+### 2026-08-27 -- Full rewrite into real ACL format, prose style, new Observations section
+
+User asked for the design note to be rewritten in the genuine ACL conference format (they
+supplied the official template zip), converted from bullet points back to flowing research-paper
+prose, with simpler vocabulary, numbered tables/figures with captions, no section-sign (S)
+references, and a new "Observations" section. Explicitly said not to worry about page limits.
+
+**Getting the real ACL style.** `acl.sty` was not installed locally and only `acl_format.tex`
+(the template body, not the style) was in `docs/`. Tried fetching `acl.sty` from the
+acl-org/acl-style-files GitHub repo; the guessed paths 404'd, and querying the repo tree via the
+GitHub API confirmed the file sits at the repo root rather than under `latex/`. While that was
+in progress the user supplied the official zip directly, which was used instead --
+`acl.sty` and `acl_natbib.bst` extracted into `docs/`. Verified the style compiles on this
+machine with a throwaway minimal document before touching the real one, specifically checking
+that `times`, `microtype`, `inconsolata` and `T1` encoding were all present and that Danish
+characters (aeoaa) render, since the note discusses Danish tokenisation. Used the `preprint`
+option rather than `review` (review adds line numbers and anonymises; this is a named final
+submission).
+
+**Numbers re-pulled from results, not copied from the old draft.** The new Observations section
+makes claims about slices and beyond-accuracy metrics that the previous draft only partly
+covered, so all of them were read directly out of `results/{mind,ebnerd}_{bm25,semantic}_eval.json`
+rather than transcribed. This surfaced that the eval JSONs keep beyond-accuracy under
+`overall`, not a separate `beyond_accuracy` key (a first attempt at extraction returned empty
+dicts and was corrected rather than reported as "no data"). Notable findings written up in
+Observations that had not previously been stated anywhere: MIND BM25 improves from 0.520 AUC
+cold-start to 0.560 warm while semantic barely moves (0.527 -> 0.538) and is actually better
+than BM25 on cold-start specifically; MIND semantic scores 0.476 AUC on head articles, i.e.
+below random, while managing 0.543 on tail; and BM25 has both higher accuracy and higher
+diversity/coverage on MIND, which runs against the usual assumption that those trade off.
+
+**Structure**: added an Abstract (ACL format supports it, and the user explicitly allowed it),
+promoted the Q9.1 serving-feature ablation from a subsection to its own numbered section, added
+the new Observations section, and converted all six tables and the leaderboard figure to proper
+`table*`/`table`/`figure*` floats with `\caption` and `\label`, cross-referenced in text via
+`\ref` so numbering stays correct automatically. Replaced every `\S` reference with
+"Section~\ref{...}". Wide tables span both columns; the ANN and ablation tables fit in one.
+
+**Verification**: compiled twice (for cross-reference resolution), then rasterised every page
+with `pdftoppm` and read them back as images rather than trusting a clean compile. First build
+was 8 pages with two overfull-hbox warnings; the 58pt one was the eight-column beyond-accuracy
+table genuinely exceeding the text block (fixed with `\small`), and the references had spilled
+onto a nearly-empty page 8 (fixed by replacing the bulleted list with a compact ACL-style
+hanging-indent block, bringing it to 7 pages). Final grep confirmed zero remaining `\S`
+references, zero "we/our", and none of the jargon the user flagged ("headroom"). Test suite
+re-run since this preceded a commit even though only `docs/` changed: 59 passed, 3 skipped.
+
+**Human review status**: every page was visually inspected as a rendered image, not just
+compiled; all statistics in the new Observations section were read out of the results JSONs at
+write time rather than carried over from the previous draft, and the one extraction bug (wrong
+JSON key) was caught and fixed rather than silently producing an empty table.
