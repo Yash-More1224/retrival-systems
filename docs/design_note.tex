@@ -38,30 +38,27 @@ failures that appeared when the pipeline was run at full test-set scale.
 
 \section{Introduction}
 
-A news app has to decide, every time a user opens it, which articles to put in front of them.
+\textbf{Background:} A news app has to decide, every time a user opens it, which articles to put in front of them.
 The datasets used here record exactly those moments. Each record, called an
 \emph{impression}, is one instance of a fixed list of candidate articles being shown to one
 user at one timestamp, together with which of those candidates the user actually clicked and
 which they ignored. Every impression also carries the list of articles that user had clicked
 before that moment, which is the only real signal available about what they are interested in.
 
-The task, then, is this: given a user's click history as of the moment an impression fired,
+\textbf{Two Tasks:} The task, then, is this: given a user's click history as of the moment an impression fired,
 find articles they are likely to click, and check the result against what they actually
 clicked in that impression. This framing splits naturally into two different jobs, and this
-report keeps them separate throughout because they are genuinely different problems. The first
-is \emph{retrieval}: searching the entire article catalog, which can be over a hundred
+report keeps them separate throughout because they are genuinely different problems. \textbf{The first
+is \emph{retrieval}:} searching the entire article catalog, which can be over a hundred
 thousand articles, and pulling out a few hundred plausible ones. Here the question is simply
 whether the article the user clicked shows up anywhere in that shortlist, which is what
-recall@K measures in Sections~\ref{sec:lexical} and~\ref{sec:semantic}. The second is
-\emph{ranking}: taking the roughly twenty candidates an impression actually showed and putting
+recall@K measures in Sections~\ref{sec:lexical} and~\ref{sec:semantic}. \textbf{The second is
+\emph{ranking}:} taking the roughly twenty candidates an impression actually showed and putting
 them in the best order. Here the question is whether the clicked one ends up near the top,
-which is what AUC, MRR and nDCG measure in Section~\ref{sec:eval}. Real recommender systems are
-built this way for a practical reason. Scoring every article in the catalog with an expensive
-model, for every user, on every request, is too slow, so a cheap method narrows the catalog
-down first and a more careful method sorts the survivors.
+which is what AUC, MRR and nDCG measure in Section~\ref{sec:eval}. 
+% Real recommender systems are built this way for a practical reason. Scoring every article in the catalog with an expensive model, for every user, on every request is too slow, so a cheap method narrows the catalog down first and a more careful method sorts the survivors.
 
-Two datasets are used rather than one, and they were chosen to be genuinely different from
-each other. MIND is English with about 65,000 articles in the development split; EB-NeRD is
+\textbf{Datasets:} Two datasets are used, and they differ as: MIND is English with about 65,000 articles in the development split; EB-NeRD is
 Danish with about 12,000 in the demo split, growing to over 125,000 in the real test set. They
 store click history in different shapes, ship different kinds of pre-trained embeddings, and
 differ in whether users in the evaluated split have any history at all. Rather than writing
@@ -72,22 +69,18 @@ comes from the data and not from two separate implementations drifting apart.
 \section{Data Pipeline}
 
 Both datasets are parsed into one common format so that everything downstream can be written
-once. Articles become a table of identifiers, titles, abstracts or subtitles, categories and
-tagged entities. Impressions become a table of identifiers, users, timestamps, the candidate
-list shown, the click labels for those candidates, and the user's click history. The two raw
-formats are quite different underneath. MIND stores a user's history directly inside every
-impression row as a space-separated string of article identifiers, with no timestamps
+once. 
+% Articles become a table of identifiers, titles, abstracts or subtitles, categories and tagged entities. Impressions become a table of identifiers, users, timestamps, the candidate list shown, the click labels for those candidates, and the user's click history. 
+The two raw formats of the two datasets are quite different: MIND stores a user's history directly inside every impression row as a space-separated string of article identifiers, with no timestamps
 attached. EB-NeRD keeps history in a separate file with one row per user, joined onto
 impressions by user identifier, and it does record a timestamp for every historical click.
 That asymmetry matters later, because it means EB-NeRD could in principle support
-time-decayed history weighting while MIND structurally cannot.
+time-decayed history weighting while MIND structurally cannot. The 
 
 The train, validation and test splits are drawn by time and never at random. This is the single
-most important correctness decision in the pipeline. If the split were random, a click a user
-made on Thursday could end up in the history feature attached to an impression from Tuesday,
-which means the model would be given the future while predicting the past. Offline scores
-would look strong and would not survive contact with a live system, where only the past is
-ever available. For MIND, the training file is cut by calendar day into train and validation,
+most important correctness decision in the pipeline. 
+% If the split were random, a click a user made on Thursday could end up in the history feature attached to an impression from Tuesday, which means the model would be given the future while predicting the past. Offline scores would look strong and would not survive contact with a live system, where only the past is ever available. 
+For MIND, the training file is cut by calendar day into train and validation,
 and the separate development file is held out entirely as the offline test set. For EB-NeRD,
 the provided train and validation windows are kept as they are. An automated test asserts, on
 every split, that the latest click timestamp in any user's history comes before the earliest
@@ -99,7 +92,7 @@ carries the number of times each article was clicked during training, and one us
 split. The training click counts serve a specific purpose. When a user has no usable history,
 neither retrieval method has anything to build a query from, so the system falls back to
 ranking by training-set popularity instead of returning an all-zero score row. On MIND this
-fallback is used often, since about 14 percent of evaluated impressions have empty history.
+fallback is used often, since about 14\% of evaluated impressions have empty history.
 On EB-NeRD it is never used, because every evaluated user has prior history.
 
 \section{Lexical Retrieval}
@@ -110,10 +103,9 @@ topic, other articles containing the same words are probably worth showing them.
 the titles of the last $N$ articles a user clicked are joined together into one string, and
 that string is used as a search query against the titles and abstracts of every article in the
 catalog. The scoring function is BM25, which is a refinement of plain word counting that adds
-three corrections. Rare words count for more than common ones, so matching on
-``parliament'' says more than matching on ``said''. Repeated words help with diminishing
+three corrections. (i) Rare words count for more than common ones. (ii) Repeated words help with diminishing
 returns, so an article mentioning a word ten times is not treated as ten times more relevant
-than one mentioning it once. Longer articles are penalised slightly, so they do not win just
+than one mentioning it once. (iii) Longer articles are penalised slightly, so they do not win just
 by containing more words overall. The doc-side part of this score, for every article and
 word pair, is
 \[
@@ -316,8 +308,8 @@ respective Codabench leaderboards. Figure~\ref{fig:leaderboards} shows the score
 
 \begin{figure*}[t]
 \centering
-\includegraphics[width=0.72\linewidth]{../screenshots/mind_screenshot.png}\\[4pt]
-\includegraphics[width=0.72\linewidth]{../screenshots/eb-nerd_screenshot.png}
+\includegraphics[width=0.92\linewidth]{./screenshots/mind_screenshot.png}\\[4pt]
+\includegraphics[width=0.92\linewidth]{./screenshots/eb-nerd_screenshot.png}
 \caption{Scored submissions on both Codabench leaderboards. Top: MIND, AUC 0.5851. Bottom:
 EB-NeRD, AUC 0.514. Both were produced by the same shared scoring code used for the offline
 evaluation.}
