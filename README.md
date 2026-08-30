@@ -1,129 +1,194 @@
 # Lexical & Semantic Retrieval on EB-NeRD and MIND
 
-CS4.406 Assignment 1, Part I. Full design rationale, verified dataset schemas, and the
-requirements traceability table live in [SPEC.md](SPEC.md) — read that first.
+CS4.406 Assignment 1 — Yash More (2024114004)
 
-## Quickstart (on the remote GPU node)
+Two retrieval systems built and measured on two news recommendation datasets: a lexical one
+(BM25, implemented from scratch as a sparse matrix) and a semantic one (provided article
+embeddings + FAISS). Both are evaluated offline with an in-repo metrics harness and were
+submitted to the two Codabench leaderboards.
 
-All development and execution happens on the remote GPU node (`ada`), not on this checkout
-directly. Sync the code over, then run the same commands there. From this machine's terminal
-(NOT from `ada`) -- `data/raw/`, `feature_store/`, and `.venv/` are gitignored and large, so
-don't sync the whole repo blindly; sync the code directories explicitly instead:
+## Start here
+
+| What | Where |
+|---|---|
+| **Design note (main deliverable, 4 pages)** | [`docs/design_note.pdf`](docs/design_note.pdf) |
+| All measured results (JSON, one file per experiment) | [`results/`](results/) |
+| Codabench leaderboard screenshots | [`docs/screenshots/`](docs/screenshots/) |
+| Full design rationale + requirements traceability | [`SPEC.md`](SPEC.md) |
+| AI usage log | [`docs/ai_usage_log.md`](docs/ai_usage_log.md) |
+
+Leaderboard scores: **MIND 0.5851 AUC**, **EB-NeRD 0.514 AUC**.
+
+## What is not in this archive
+
+Three directories are excluded because of size. Everything in them is regenerable from the
+code here, and no result depends on having them present to *read*:
+
+| Excluded | Size | Regenerate with |
+|---|---|---|
+| `data/` (raw + interim + splits) | 6.3 GB | `make data` |
+| `feature_store/` (indices, embeddings) | 95 MB | `make data` then `make retrieval` |
+| `predictions/` (Codabench submission files) | 1.3 GB | `make submit` |
+
+The `results/*.json` files **are** included — they are small and are the evidence behind every
+number in the design note, so the reported numbers can be checked without re-running anything.
+
+## Running it
+
+Python 3.12. No GPU required; everything runs on CPU.
 
 ```bash
-scp -r retrival-systems yash.more@ada:~/ire/a1
-```
-
-Then on `ada`:
-```bash
-cd ~/ire/a1/retrival-systems
 python -m venv .venv && source .venv/bin/activate
 pip install -r requirements.txt
-make data   # Q1: download -> clean -> temporal split -> feature store
-make test   # Q9.2: leakage / split-boundary tests
+make test          # 40 passed, 22 skipped, ~4s — no data download needed
 ```
 
-`make data` is idempotent — safe to re-run. It downloads MIND-small and EB-NeRD demo
-(config default; see `config/default.yaml: ebnerd.scale`) if not already present in
-`data/raw/`, parses both into a unified schema, splits each temporally (never randomly —
-see SPEC.md Q1.3), and materializes the feature store under `feature_store/`.
+`make test` is the fastest way to confirm the checkout is sound. The 40 that run cover the
+metrics implementations, the BM25 scorer, the slicing logic and submission formatting, all on
+synthetic fixtures.
 
-To also fetch the EB-NeRD Codabench test set (1.5GB, needed only for Q5, not for offline
-dev/eval):
+The 22 skips are expected in this archive and are not failures. The leakage and
+split-boundary tests (`test_no_leakage.py`, `test_split_disjoint.py`, `test_bm25_agreement.py`)
+read the real `data/splits/` and `feature_store/` directories, which are excluded here for
+size, so they skip with an explicit `run make data first` message rather than silently
+passing. After `make data` all 62 run, and the full suite is 59 passed / 3 skipped.
+
+To rebuild everything from scratch:
+
 ```bash
-python -m src.pipeline.download --datasets ebnerd --include-testset
+make data          # download -> clean -> temporal split -> feature store
+make retrieval     # BM25 index + N-sweep; embeddings + semantic eval
+make eval          # ranking metrics, beyond-accuracy, slices
+make ablation      # serving-feature leakage ablation (EB-NeRD only)
+make submit        # regenerate Codabench prediction files
 ```
 
-To build final numbers on `ebnerd_small` instead of the default `ebnerd_demo`:
-```bash
-python build_pipeline.py --ebnerd-scale small
-```
+`make data` is idempotent and safe to re-run. It downloads MIND-small and EB-NeRD demo (see
+`config/default.yaml`), parses both into one unified schema, splits each **temporally, never
+randomly** (see SPEC.md Q1.3), and materialises the feature store.
 
-Then Q2 (BM25 candidate generation — builds/caches the index, sweeps query-history length N
-on val, reports recall@{50,100,200} on test under Pool A/Pool B with bootstrap CIs):
+Expect `make data` to take a while on first run, and `make submit` considerably longer — it
+scores 13.5M EB-NeRD impressions and 2.37M MIND impressions against their official test
+catalogs.
+
+## Pipeline stages
+
+**Q1 — Data pipeline** (`src/pipeline/`, `build_pipeline.py`). Both datasets parsed to a
+common schema. Splits are drawn by time; `tests/test_no_leakage.py` asserts on every split
+that the latest click timestamp in any user's history precedes the earliest impression
+timestamp in that split.
+
+**Q2 — Lexical retrieval** (`src/retrieval/{tokenize,bm25,candidates,run_bm25_eval}.py`).
+BM25 built as a sparse article × vocabulary weight matrix, so scoring a whole query batch is
+one sparse matmul and the matrix's non-zero pattern *is* the inverted index. Sweeps query
+history length N on validation, reports recall@{50,100,200} on test under two candidate pools
+with bootstrap CIs.
+
 ```bash
 python -m src.retrieval.run_bm25_eval --datasets mind ebnerd
 ```
-Writes `results/<dataset>_bm25_val_sweep.json` (full N-sweep, for review) and
-`results/<dataset>_bm25_test.json` (final numbers). See SPEC.md Q2.0 for why recall@K is
-reported under two pools rather than one number.
 
-Then Q3 (semantic candidate generation — **provided embeddings only**, no training/model
-inference: EB-NeRD's shipped word2vec document vectors, MIND's shipped entity embeddings
-mean-pooled per article; see SPEC.md Q3.1):
+**Q3 — Semantic retrieval** (`src/retrieval/{build_embeddings,semantic,run_semantic_eval}.py`).
+**Provided embeddings only, no training or model inference**: EB-NeRD's shipped word2vec
+document vectors, MIND's shipped entity embeddings mean-pooled per article. Uses FAISS
+`IndexFlatIP` when `faiss-cpu` is available, otherwise an equivalent numpy brute-force
+fallback — both exact, neither approximate.
+
 ```bash
-python -m src.retrieval.build_embeddings --datasets mind ebnerd   # once, or after a rebuild
+python -m src.retrieval.build_embeddings --datasets mind ebnerd
 python -m src.retrieval.run_semantic_eval --datasets mind ebnerd
 ```
-Writes `feature_store/<dataset>/embeddings{,_ids}.npy` + `embeddings.meta.json` (coverage),
-and `results/<dataset>_semantic_{val_sweep,test}.json` in the same format as Q2's BM25 results
-for direct comparison (Q3.5). Uses a real FAISS `IndexFlatIP` if `faiss-cpu` is installed
-(it's in `requirements.txt`, so this is automatic on `ada`), otherwise an equivalent numpy
-brute-force fallback — both are exact, not approximate.
 
-Then Q4 (evaluation harness — scores each impression's OWN candidate list, a different task
-from Q2/Q3's catalog-wide recall@K; see SPEC.md Q4.0). Requires Q2/Q3 to have been run first
-(reads their `best_n` from the val-sweep results; falls back to config defaults otherwise):
+**Q4 — Evaluation harness** (`src/eval/{metrics,beyond_accuracy,slicing,run_eval}.py`). Scores
+each impression's *own* candidate list, which is a different task from Q2/Q3's catalog-wide
+recall@K (SPEC.md Q4.0). Reports AUC, MRR, nDCG@{5,10} with bootstrap 95% CIs, plus
+beyond-accuracy metrics (intra-list diversity in both categorical and embedding variants,
+novelty, coverage) over each impression's top-10, plus all of the above sliced by
+cold-start/warm users and head/tail articles.
+
 ```bash
 python -m src.eval.run_eval --datasets mind ebnerd --split test
 ```
-Writes `results/<dataset>_<method>_eval.json` for `method` in `{bm25, semantic}`: AUC, MRR,
-nDCG@{5,10} with bootstrap 95% CIs, beyond-accuracy (intra-list diversity — categorical AND
-embedding variants, novelty, coverage) over each impression's top-10, and the same four
-metrics sliced by cold-start/warm and head/tail articles (SPEC.md Q4.3). Note: on both
-datasets over 90% of articles have zero train-split clicks, which makes the head/tail
-threshold land exactly at 0 — `src/eval/slicing.py` handles this explicitly (see its
-docstring); worth restating in the design note as a real property of the data, not an
-implementation quirk to gloss over.
 
-Then Q5 (Codabench submission). Generates a ranked prediction for every impression in the
-official test set, validates it structurally (full coverage, original row order, valid rank
-permutations, see `src/submission/format.py`) before zipping, since MIND allows only 1
-upload/day and EB-NeRD 5/day:
+**Q5 — Codabench submission** (`src/submission/{format,mind,ebnerd}.py`). Generates a ranked
+prediction for every impression in the official test set and validates it structurally (full
+coverage, original row order, valid rank permutations) *before* zipping, since MIND allows
+only 1 upload/day and EB-NeRD 5/day.
+
 ```bash
-python -m src.submission.mind --method bm25        # bm25 had higher AUC/MRR for MIND in Q4
-python -m src.submission.ebnerd --method semantic   # semantic had marginally higher AUC/MRR/nDCG for EB-NeRD
+python -m src.submission.mind --method bm25       # BM25 won on MIND in Q4
+python -m src.submission.ebnerd --method semantic  # semantic won on EB-NeRD in Q4
 ```
-Both build a **fresh** index over their own official test catalog rather than reusing the
-demo/small-built `feature_store/`. MIND's official test set is `MINDlarge_test` (from
-https://msnews.github.io/, downloaded separately, 2.37M impressions), not MINDsmall_dev: an
-earlier version of this pipeline assumed MINDsmall_dev was the test set (the assignment
-provides no separate MIND test file), which Codabench's own scoring rejected with a
-candidate-count mismatch, since its real reference is `MINDlarge_test`. EB-NeRD downloads
-`ebnerd_testset.zip` (1.5GB) on first run if not already present. Both scripts stream their
-behaviour file in batches and score only each impression's own candidates (not the whole
-catalog per row) rather than materialising everything in memory at once: at EB-NeRD's real
-scale (13.5M impressions, 125K articles) the naive approach OOM'd and would have taken
-70+ hours; see `docs/design_note.tex` §7 for the full story. Writes
-`predictions/mind_prediction.zip` (containing `prediction.txt`, the exact filename Codabench's
-MIND guidelines require) and `predictions/ebnerd_predictions.zip` (containing
-`ebnerd_predictions.txt`). See SPEC.md Q5 for the verified format details.
 
-Then Q9.1 (serving-feature ablation, EB-NeRD only, since MIND's raw data has none of these
-columns). Reports the same AUC/MRR/nDCG on the offline test split with three cumulative
-feature configurations, quantifying how much of an apparently strong result would be leakage:
+Both build a fresh index over their own official test catalog rather than reusing the
+demo-scale feature store. MIND's official test set is `MINDlarge_test` (from
+https://msnews.github.io/, downloaded separately), not `MINDsmall_dev` — an earlier version
+assumed the latter and Codabench rejected it with a candidate-count mismatch. Each script
+streams its behaviour file in batches and scores only each impression's own candidates rather
+than the whole catalog per row; at EB-NeRD's real scale the naive approach ran out of memory
+and would have taken 70+ hours (see the design note's "Where It Breaks at Scale").
+
+Note the archive filenames are dictated by Codabench, not chosen: MIND's zip must contain
+`prediction.txt` (singular), EB-NeRD's must contain `predictions.txt` (plural).
+
+**Q9.1 — Serving-feature ablation** (`src/eval/run_ablation.py`). EB-NeRD only, because MIND's
+raw data carries none of these columns. Three cumulative feature configurations quantify how
+much of an apparently strong result would be leakage rather than retrieval quality.
+
 ```bash
 python -m src.eval.run_ablation --split test
 ```
-Writes `results/ebnerd_ablation.json`.
 
-## Status
+## Measurement scripts
 
-- [x] Q1 — Reproducible data pipeline (`src/pipeline/`, `build_pipeline.py`)
-- [x] Q2 — Lexical candidate generation (BM25) (`src/retrieval/{tokenize,bm25,candidates,run_bm25_eval}.py`)
-- [x] Q3 — Semantic candidate generation (`src/retrieval/{build_embeddings,semantic,run_semantic_eval}.py`) — provided embeddings only, per user instruction
-- [x] Q4 — Offline evaluation harness (`src/eval/{metrics,beyond_accuracy,slicing,run_eval}.py`)
-- [x] Q5 — Codabench submission (`src/submission/{format,mind,ebnerd}.py`) — uploaded to both leaderboards (MIND scored on MINDlarge_test; EB-NeRD submitted, scoring)
-- [x] Q6 — Design note (`docs/design_note.tex` / `.pdf`, 3/4 pages — leaderboard screenshots still to be inserted once EB-NeRD scoring completes)
-- [x] Q9.1 — Serving-feature ablation (`src/eval/run_ablation.py`, `results/ebnerd_ablation.json`) — EB-NeRD only, MIND has no such features in its raw data
-- [x] Q9.2 — Behaviour-window / no-leakage tests (`tests/test_no_leakage.py`)
+These back the quantitative claims in the design note about *tool and index choices*, rather
+than about accuracy. Each writes its own `results/*.json`.
+
+```bash
+python -m src.eval.bench_bm25_alternatives --datasets mind ebnerd   # this BM25 vs rank_bm25
+python -m src.eval.bench_ann_recall_latency --datasets mind ebnerd  # exact vs IVF vs HNSW
+python -m src.eval.run_tokenizer_ablation --datasets mind ebnerd    # stemming on/off
+python -m src.eval.bench_thread_scaling --dataset mind --mode semantic  # BLAS thread scaling
+```
+
+Headline findings: the sparse-matrix BM25 is ~782× faster than `rank_bm25` on MIND; IVF and
+HNSW are both >10× faster than exact search at >90% agreement with its top-100, though exact
+search is fast enough at this scale to not need them; stemming helps EB-NeRD (Danish
+compounds) and slightly hurts MIND.
+
 
 ## Repository layout
 
-See SPEC.md's "Repository layout" section for the full tree and what each path is for.
-`data/`, `feature_store/`, and dependency/venv artifacts are gitignored (see `.gitignore`);
-`results/` and `predictions/` are small and are committed intentionally.
+```
+retrival-systems/
+├── config/default.yaml          # all hyperparameters + seeds in one place
+├── src/
+│   ├── config.py                # load yaml, seed everything
+│   ├── pipeline/                # Q1 — download, clean, temporal split, feature store
+│   ├── retrieval/               # Q2/Q3 — tokenize, bm25, semantic, candidates, evals
+│   ├── eval/                    # Q4/Q9.1 — metrics, slicing, bootstrap, ablation, benchmarks
+│   └── submission/              # Q5 — format validation, mind, ebnerd
+├── tests/                       # 59 tests incl. test_no_leakage.py (Q9.2)
+├── results/                     # measured JSON, one file per experiment — INCLUDED
+├── docs/
+│   ├── design_note.pdf          # Q6 deliverable (4 pages)
+│   ├── screenshots/             # Q7.3 Codabench leaderboard screenshots
+│   └── ai_usage_log.md          # Q7.4
+├── build_pipeline.py            # Q1.5 — one-command entry point
+├── Makefile, requirements.txt, pytest.ini
+├── SPEC.md, README.md
+├── data/                        # EXCLUDED — 6.3 GB, regenerate with `make data`
+├── feature_store/               # EXCLUDED — 95 MB, regenerate with `make data`+`make retrieval`
+└── predictions/                 # EXCLUDED — 1.3 GB, regenerate with `make submit`
+```
+
+A note on SPEC.md: it was written *before* implementation, as the plan and requirements
+traceability document, and a few paths in its own layout section drifted during the build. The
+tree above is the accurate one. In particular the serving-feature ablation ended up in
+`src/eval/run_ablation.py` rather than a separate `src/ablation/` package, the leaderboard
+screenshots are in `docs/screenshots/` rather than `docs/leaderboard/`, and `predictions/` grew
+far past the size at which committing it was sensible, so it is gitignored and excluded here.
 
 ## AI usage
 
-See `docs/ai_usage_log.md`.
+See [`docs/ai_usage_log.md`](docs/ai_usage_log.md).

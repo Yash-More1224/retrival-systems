@@ -710,3 +710,137 @@ re-run since this preceded a commit even though only `docs/` changed: 59 passed,
 compiled; all statistics in the new Observations section were read out of the results JSONs at
 write time rather than carried over from the previous draft, and the one extraction bug (wrong
 JSON key) was caught and fixed rather than silently producing an empty table.
+
+### 2026-08-27/29 -- Design-note refinement, 4-page condensation, repo cleanup, submission packaging
+
+**Tool**: Claude Code (Opus 5), VS Code extension.
+
+Continues directly from the ACL-format rewrite above. No new pipeline code was written in this
+period; all work was on the design note, the README, and preparing the submission archive.
+
+**1. User's own edits, preserved verbatim.** The user hand-edited `design_note.tex` between
+sessions: moved the screenshots into `docs/screenshots/` and updated the `\includegraphics`
+paths, added bold inline paragraph-lead labels (`\textbf{Background:}`, `\textbf{Two Tasks:}`,
+`\textbf{Datasets:}` and so on) to Section 1 only, and commented out three explanatory sentences
+with `%`. They asked for the same labelling pattern to be extended to the remaining sections and
+explicitly said to keep their own edits as-is. Added roughly 29 further labels across Data
+Pipeline, Lexical Retrieval, Semantic Retrieval, Evaluation Harness, Observations,
+Serving-Feature Ablation and Where It Breaks at Scale, leaving Limitations unlabelled since a
+single label there would just restate the section heading. Verified by grep afterwards that the
+screenshot path, all three commented-out sentences, and an incomplete sentence the user had left
+mid-edit (`...while MIND structurally cannot. The`) were all still intact and unmodified. That
+dangling fragment was flagged to the user rather than silently fixed, since the instruction was
+to preserve their edits.
+
+**2. Layout changes, each traced to the actual mechanism rather than guessed.** The user asked
+how to reduce page margins; `acl.sty` loads `geometry` internally at line 103 with
+`margin=2.5cm`, so the fix is to call the `\geometry{...}` command after the package is already
+loaded rather than re-`\usepackage` it. Applied at 1.5cm, later 1.2cm. Separately, the user
+asked to reclaim the large gap under the title: `acl.sty` reserves a fixed `\titlebox` of
+`11\baselineskip` with stretchy `fil` glue between the title, author block and body, so the gap
+is leftover box height rather than a fixed skip; reduced to `7\baselineskip`. Also raised
+`\topfraction`/`\dbltopfraction` and lowered `\textfraction`, because the default float limits
+were forcing the wide `table*`/`figure*` floats onto pages of their own.
+
+**3. Table consolidation.** On the user's request the two separate recall@K tables (BM25 and
+semantic, identical column headers) were merged into one four-row table with a dataset-separating
+midrule, and every `\ref` updated from the two old labels to a single `tab:recall`. The user then
+noticed the Slicing paragraph in the Evaluation Harness section described cold/warm and head/tail
+comparisons that appeared nowhere as a table -- the sliced numbers existed only as scattered prose
+in Observations. Confirmed this was correct, then built the missing table directly from the
+`slices` blocks of `results/{mind,ebnerd}_{bm25,semantic}_eval.json` and cross-referenced it from
+the Slicing paragraph and from both Observations paragraphs that cite those numbers. For the
+4-page version this was merged again with the beyond-accuracy table into a single float with
+`Overall` and `By slice` sub-blocks, since the two share identical row labels and three
+span-both-column floats were competing for the same page tops.
+
+**4. Removals, all user-directed.** The References section was removed (four hand-formatted
+entries, no bibtex). Figure 1 (the two leaderboard screenshots) was removed; rather than dropping
+the evidence, the scores were kept inline as prose (MIND 0.5851, EB-NeRD 0.514) with a pointer to
+the `docs/screenshots/` folder, per the user's instruction to mention that a separate folder holds
+them. Also converted the word "percent" to `\%` throughout on request.
+
+**5. 4-page condensation (`design_note-4-pages.tex`, later renamed).** The user asked for a
+version containing all the same points but under a hard 4-page cap, and asked to see the cut plan
+before any file was written. Measured the existing document first (4,241 words of prose across 6
+pages, plus five tables and one figure taking roughly 1.5 pages) to derive the required reduction
+rather than estimating it, then presented a section-by-section plan naming specific redundancies:
+the BM25 three-corrections prose restating what the formula and its variable glossary already
+say; the `rank_bm25` result stated four different ways; Pool A/B defined identically in both the
+prose and the table caption; the Recall Comparison paragraph duplicating the merged caption; the
+thread-count paragraph framed as a retraction of an earlier draft that does not exist in a new
+document. The user approved the plan and asked to keep the ANN table. Final result is 4 pages with
+prose down to roughly 2,700 words, about a 36% cut, with every measured number, all four rigor
+findings and all tables retained. Reaching exactly 4 pages took several compile-measure-trim
+iterations; each was verified by `pdfinfo` page count and by rasterising the trailing pages with
+`pdftoppm` to see how much was actually spilling, rather than guessing at word counts.
+
+**6. Which note is final.** The user decided the 4-page version is the deliverable. Renamed it to
+`design_note.pdf` and the previous 6-page one to `design_note-old.pdf`. The `.tex` files were
+renamed to match as well, which was not explicitly requested but was flagged to the user as
+necessary: leaving the 6-page source named `design_note.tex` would mean any future
+`pdflatex design_note.tex` silently overwrites the 4-page `design_note.pdf` with 6-page output.
+Recompiled after renaming to confirm the renamed source still produces 4 pages.
+
+**7. Repository cleanup before submission.** The user asked what was stale and whether to run
+`make clean`. Answered no, with the reason: `make clean` is `rm -rf data/interim data/splits
+feature_store results`, which would delete `results/`, the committed JSON evidence behind every
+number in the design note. Instead surveyed the tree and identified genuine leftovers, which the
+user then approved removing individually: the ACL template zip (already extracted), LaTeX
+`.aux/.log/.out` artifacts, `.pytest_cache/`, six `__pycache__/` directories, `docs/acl_format.tex`
+(the reference template, untracked from git and deleted), and `submissions/`. That last one was
+checked before deleting rather than assumed redundant: it held `scoring_result.zip` at 0 bytes and
+`prediction_result.zip` containing only an 84-byte `metadata` file with all-null fields, i.e.
+Codabench output stubs from a run that never completed, timestamped 40 minutes before the MIND
+predictions were even generated. Also removed `src/ablation/`, an empty directory left over from
+SPEC.md's original plan (the ablation actually lives in `src/eval/run_ablation.py`).
+
+**8. README rewritten for a zip submission.** The user said the submission is a zip rather than a
+git push, which changes what the README needs to do. Two factual errors were found and corrected
+rather than carried forward. First, the layout section claimed "`results/` and `predictions/` are
+small and are committed intentionally" -- `predictions/` is 1.3 GB and is explicitly gitignored,
+with a comment in `.gitignore` saying so, so the README directly contradicted the repo. Second,
+the status list still read "EB-NeRD submitted, scoring" and "design note, 3/4 pages, leaderboard
+screenshots still to be inserted once EB-NeRD scoring completes", both long since resolved.
+Beyond the errors, the quickstart opened with an `scp` to the user's personal `ada` account, which
+is meaningless to a grader unzipping the archive, so it was reframed around a local venv and
+`make test`. Added a "Start here" table, an explicit table of what is excluded from the archive
+and how to regenerate each part, and a section documenting the four rigor benchmark scripts, which
+had not been mentioned in the README at all despite being what the professor's grading note asked
+for. Verified every relative link resolves, every Makefile target referenced exists, and every
+documented command parses -- the last check caught that three of the four benchmark scripts take
+`--datasets` (plural, nargs) rather than the `--dataset` that had been written.
+
+**9. A false claim caught by actually running the suite in the packaged copy.** After assembling
+`submit/`, running `pytest` there gave 40 passed / 22 skipped, not the 59 passed / 3 skipped the
+README asserted. The 22 skips are the tests that read `data/splits/` and `feature_store/`, both
+deliberately excluded from the archive for size; they skip cleanly with an explicit
+`run make data first` message rather than failing or vacuously passing. This mattered because the
+README specifically claimed the leakage and split-boundary guarantees were covered "on synthetic
+fixtures", when `test_no_leakage.py` -- the explicitly required Q9.2 test -- is among the skips.
+Rewrote that section to state the real counts, name the three files that skip and why, and note
+that all 62 run after `make data`. Both numbers were confirmed by running the suite in each
+directory rather than reasoning about it.
+
+**10. Viva preparation.** The professor announced that assignment work will be probed in a viva.
+Produced `docs/viva_questions.md`, a 66-question bank with answer space, grounded in the actual
+implementation by re-reading `metrics.py`, `tokenize.py`, `bm25.py`, `semantic.py`, `slicing.py`,
+`beyond_accuracy.py`, `candidates.py` and `split.py` rather than writing generic IR questions.
+The user has not answered them yet; the plan is for them to answer and for the answers to then be
+reviewed and corrected. This file is intentionally NOT included in the submission archive, since
+it is study material rather than an assignment artifact.
+
+**Scope note on this entry**: it was written into `submit/docs/ai_usage_log.md` only, at the
+user's instruction. The copy at `retrival-systems/docs/ai_usage_log.md` therefore remains stale
+as of this date, ending at the 2026-08-27 entry.
+
+**Human review status**: all layout and page-count claims were verified by compiling and then
+rasterising pages with `pdftoppm` and reading them back as images, not by trusting a clean
+compile; the 4-page target was confirmed with `pdfinfo` rather than estimated. The two README
+factual errors and the test-count discrepancy were found by checking the repo and running the
+suite, not by re-reading the README against itself. Every deletion was surveyed and reported
+before being run, and each was individually approved by the user; `submissions/` in particular
+was inspected for contents first, and `make clean` was recommended against rather than run. All
+structural decisions in this period -- which design note is final, removing the figure and
+references, keeping the ANN table, what to exclude from the archive -- were explicit user choices,
+not unilateral ones.
